@@ -1,21 +1,36 @@
-use crate::mmscanner::{scan_sequence, MinimizerIterator};
+use crate::feat::Meros;
+use crate::mmscanner::scan_sequence;
+use crate::reader::detect_file_format;
 use crate::reader::Reader;
 use crate::seq::{Base, SeqFormat};
-use crate::{detect_file_format, FastaReader, FastqReader, Meros};
+use crate::MinimizerIterator;
+use crate::{FastaReader, FastqReader};
 use crossbeam_channel::{bounded, Receiver};
 use scoped_threadpool::Pool;
 use std::collections::HashMap;
 use std::io::Result;
 use std::sync::Arc;
 
-pub struct ParallelItem<P>(P);
+/// A wrapper for parallel processing items.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::ParallelItem;
+///
+/// let item = ParallelItem(42);
+/// assert_eq!(item.unwrap(), 42);
+/// ```
+pub struct ParallelItem<P>(pub P);
 
 impl<P> ParallelItem<P> {
+    /// Unwraps the inner value.
     pub fn unwrap(self) -> P {
         self.0
     }
 }
 
+/// Represents the result of a parallel operation.
 pub struct ParallelResult<P>
 where
     P: Send,
@@ -27,12 +42,27 @@ impl<P> ParallelResult<P>
 where
     P: Send,
 {
+    /// Retrieves the next item from the parallel result.
     #[inline]
     pub fn next(&mut self) -> Option<ParallelItem<P>> {
         self.recv.recv().ok().map(ParallelItem)
     }
 }
 
+/// Creates a reader based on the file format.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::create_reader;
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let file_path = Path::new("tests/data/test.fasta").to_str().unwrap().to_string();
+/// let reader = create_reader(&[file_path], 0, 0)?;
+/// # Ok(())
+/// # }
+/// ```
 pub fn create_reader(
     file_pair: &[String],
     file_index: usize,
@@ -47,6 +77,37 @@ pub fn create_reader(
     }
 }
 
+/// Performs parallel reading and processing of sequences.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::{read_parallel, FastaReader, Meros, Base, MinimizerIterator};
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fasta");
+/// let mut reader = FastaReader::from_path(path, 0)?;
+/// let meros = Meros::new(11, 3, Some(0), None, None);
+///
+/// let work = |seqs: &mut Vec<Base<MinimizerIterator>>| {
+///     // Process sequences
+///     seqs.len()
+/// };
+///
+/// let func = |result: &mut seqkmer::ParallelResult<usize>| {
+///     let mut total = 0;
+///     while let Some(count) = result.next() {
+///         total += count.unwrap();
+///     }
+///     total
+/// };
+///
+/// let total = read_parallel(&mut reader, 4, &meros, work, func)?;
+/// println!("Total sequences processed: {:?}", total);
+/// # Ok(())
+/// # }
+/// ```
 pub fn read_parallel<R, W, O, F, Out>(
     reader: &mut R,
     n_threads: usize,
@@ -108,6 +169,36 @@ where
     Ok(())
 }
 
+/// Performs parallel reading and processing of buffered data.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::{buffer_read_parallel, FastaReader};
+/// use std::path::Path;
+/// use std::fs::File;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fasta");
+/// let mut file = File::open(path)?;
+///
+/// let work = |data: Vec<u8>| {
+///     // Process data
+///     data.len()
+/// };
+///
+/// let func = |result: &mut seqkmer::ParallelResult<usize>| {
+///     let mut total = 0;
+///     while let Some(count) = result.next() {
+///         total += count.unwrap();
+///     }
+///     total
+/// };
+///
+/// let _ = buffer_read_parallel(&mut file, 4, 1024, work, func)?;
+/// # Ok(())
+/// # }
+/// ```
 pub fn buffer_read_parallel<R, D, W, O, F, Out>(
     reader: &mut R,
     n_threads: usize,
@@ -179,6 +270,37 @@ where
     Ok(())
 }
 
+/// Performs parallel processing on a HashMap.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::buffer_map_parallel;
+/// use std::collections::HashMap;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let mut map = HashMap::new();
+/// map.insert(1, vec![1, 2, 3]);
+/// map.insert(2, vec![4, 5, 6]);
+///
+/// let work = |(key, value): (&u32, &Vec<i32>)| {
+///     // Process data
+///     value.iter().sum::<i32>()
+/// };
+///
+/// let func = |result: &mut seqkmer::ParallelResult<i32>| {
+///     let mut total = 0;
+///     while let Some(sum) = result.next() {
+///         total += sum.unwrap();
+///     }
+///     total
+/// };
+///
+/// let total = buffer_map_parallel(&map, 4, work, func)?;
+/// println!("Total sum: {:?}", total);
+/// # Ok(())
+/// # }
+/// ```
 pub fn buffer_map_parallel<D, W, O, F, Out>(
     map: &HashMap<u32, Vec<D>>,
     n_threads: usize,

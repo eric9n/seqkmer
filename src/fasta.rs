@@ -6,7 +6,27 @@ use std::path::Path;
 
 const SEQ_LIMIT: u64 = u64::pow(2, 32);
 
-/// FastaReader
+/// FastaReader for reading FASTA format files.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::{FastaReader, Reader};
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fasta");
+/// let mut reader = FastaReader::from_path(path, 0)?;
+///
+/// while let Some(sequences) = reader.next()? {
+///     for sequence in sequences {
+///         println!("Sequence ID: {}", sequence.header.id);
+///         println!("Sequence length: {}", sequence.body.single().unwrap().len());
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct FastaReader<R>
 where
     R: Read + Send,
@@ -25,10 +45,38 @@ impl<R> FastaReader<R>
 where
     R: Read + Send,
 {
+    /// Creates a new FastaReader with default capacity and batch size.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::FastaReader;
+    /// use std::fs::File;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let file = File::open("tests/data/test.fasta")?;
+    /// let reader = FastaReader::new(file, 0);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(reader: R, file_index: usize) -> Self {
         Self::with_capacity(reader, file_index, BUFSIZE, 30)
     }
 
+    /// Creates a new FastaReader with specified capacity and batch size.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::FastaReader;
+    /// use std::fs::File;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let file = File::open("tests/data/test.fasta")?;
+    /// let reader = FastaReader::with_capacity(file, 0, 4096, 50);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_capacity(reader: R, file_index: usize, capacity: usize, batch_size: usize) -> Self {
         assert!(capacity >= 3);
         Self {
@@ -99,6 +147,20 @@ where
 }
 
 impl FastaReader<Box<dyn Read + Send>> {
+    /// Creates a new FastaReader from a file path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::FastaReader;
+    /// use std::path::Path;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let path = Path::new("tests/data/test.fasta");
+    /// let reader = FastaReader::from_path(path, 0)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline]
     pub fn from_path<P: AsRef<Path>>(path: P, file_index: usize) -> Result<Self> {
         let reader = dyn_reader(path)?;
@@ -128,7 +190,27 @@ impl<R: Read + Send> Reader for FastaReader<R> {
     }
 }
 
-/// BufferFastaReader
+/// BufferFastaReader for reading FASTA format files with buffering.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::{BufferFastaReader, Reader};
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fasta");
+/// let mut reader = BufferFastaReader::from_path(path, 0)?;
+///
+/// while let Some(sequences) = reader.next()? {
+///     for sequence in sequences {
+///         println!("Sequence ID: {}", sequence.header.id);
+///         println!("Sequence length: {}", sequence.body.single().unwrap().len());
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct BufferFastaReader<R>
 where
     R: Read + Send,
@@ -148,10 +230,38 @@ impl<R> BufferFastaReader<R>
 where
     R: Read + Send,
 {
+    /// Creates a new BufferFastaReader with default capacity and batch size.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::BufferFastaReader;
+    /// use std::fs::File;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let file = File::open("tests/data/test.fasta")?;
+    /// let reader = BufferFastaReader::new(file, 0);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(reader: R, file_index: usize) -> Self {
         Self::with_capacity(reader, file_index, BUFSIZE, 60)
     }
 
+    /// Creates a new BufferFastaReader with specified capacity and batch size.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::BufferFastaReader;
+    /// use std::fs::File;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let file = File::open("tests/data/test.fasta")?;
+    /// let reader = BufferFastaReader::with_capacity(file, 0, 4096, 50);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_capacity(reader: R, file_index: usize, capacity: usize, batch_size: usize) -> Self {
         assert!(capacity >= 3);
         Self {
@@ -239,6 +349,20 @@ where
 }
 
 impl BufferFastaReader<Box<dyn Read + Send>> {
+    /// Creates a new BufferFastaReader from a file path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::BufferFastaReader;
+    /// use std::path::Path;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let path = Path::new("tests/data/test.fasta");
+    /// let reader = BufferFastaReader::from_path(path, 0)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline]
     pub fn from_path<P: AsRef<Path>>(path: P, file_index: usize) -> Result<Self> {
         let reader = dyn_reader(path)?;

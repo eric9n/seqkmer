@@ -6,7 +6,21 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Result, Seek};
 use std::path::Path;
 
-pub(crate) fn dyn_reader<P: AsRef<Path>>(path: P) -> Result<Box<dyn Read + Send>> {
+/// Creates a dynamic reader that can handle both gzipped and non-gzipped files.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::dyn_reader;
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fasta");
+/// let reader = dyn_reader(path)?;
+/// # Ok(())
+/// # }
+/// ```
+pub fn dyn_reader<P: AsRef<Path>>(path: P) -> Result<Box<dyn Read + Send>> {
     let mut file = open_file(path)?;
     if is_gzipped(&mut file)? {
         let decoder = GzDecoder::new(file);
@@ -16,13 +30,39 @@ pub(crate) fn dyn_reader<P: AsRef<Path>>(path: P) -> Result<Box<dyn Read + Send>
     }
 }
 
-pub(crate) fn is_gzipped(file: &mut File) -> Result<bool> {
+/// Checks if a file is gzipped.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::is_gzipped;
+/// use std::fs::File;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let mut file = File::open("tests/data/test.fasta")?;
+/// let is_gz = is_gzipped(&mut file)?;
+/// println!("Is gzipped: {}", is_gz);
+/// # Ok(())
+/// # }
+/// ```
+pub fn is_gzipped(file: &mut File) -> Result<bool> {
     let mut buffer = [0; 2];
     file.read_exact(&mut buffer)?;
     file.rewind()?; // 重置文件指针到开头
     Ok(buffer == [0x1F, 0x8B])
 }
 
+/// Trims pair information from a sequence ID.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::trim_pair_info;
+///
+/// let id = "seq1/1";
+/// let trimmed = trim_pair_info(id);
+/// assert_eq!(trimmed, "seq1");
+/// ```
 pub fn trim_pair_info(id: &str) -> String {
     let sz = id.len();
     if sz <= 2 {
@@ -34,6 +74,20 @@ pub fn trim_pair_info(id: &str) -> String {
     id.to_string()
 }
 
+/// Opens a file and provides a more informative error message if the file is not found.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::open_file;
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fasta");
+/// let file = open_file(path)?;
+/// # Ok(())
+/// # }
+/// ```
 pub fn open_file<P: AsRef<Path>>(path: P) -> Result<File> {
     File::open(&path).map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
@@ -44,8 +98,22 @@ pub fn open_file<P: AsRef<Path>>(path: P) -> Result<File> {
     })
 }
 
-pub(crate) fn detect_file_format<P: AsRef<Path>>(path: P) -> io::Result<SeqFormat> {
-    // let mut file = open_file(path)?;
+/// Detects the format of a sequence file (FASTA or FASTQ).
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::{detect_file_format, SeqFormat};
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fasta");
+/// let format = detect_file_format(path)?;
+/// assert_eq!(format, SeqFormat::Fasta);
+/// # Ok(())
+/// # }
+/// ```
+pub fn detect_file_format<P: AsRef<Path>>(path: P) -> io::Result<SeqFormat> {
     let read1: Box<dyn io::Read + Send> = dyn_reader(path)?;
     let reader = BufReader::new(read1);
     let mut lines = reader.lines();
@@ -77,7 +145,18 @@ pub(crate) fn detect_file_format<P: AsRef<Path>>(path: P) -> io::Result<SeqForma
     ))
 }
 
-pub(crate) fn trim_end(buffer: &mut Vec<u8>) {
+/// Trims trailing newlines, carriage returns, and '>' or '@' characters from a buffer.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::reader::trim_end;
+///
+/// let mut buffer = b"ACGT\n>".to_vec();
+/// trim_end(&mut buffer);
+/// assert_eq!(buffer, b"ACGT");
+/// ```
+pub fn trim_end(buffer: &mut Vec<u8>) {
     while let Some(&b'\n' | &b'\r' | &b'>' | &b'@') = buffer.last() {
         buffer.pop();
     }
@@ -85,6 +164,7 @@ pub(crate) fn trim_end(buffer: &mut Vec<u8>) {
 
 pub const BUFSIZE: usize = 16 * 1024 * 1024;
 
+/// A trait for reading sequences.
 pub trait Reader: Send {
     fn next(&mut self) -> Result<Option<Vec<Base<Vec<u8>>>>>;
 }
@@ -95,6 +175,17 @@ impl Reader for Box<dyn Reader + Send> {
     }
 }
 
+/// Represents position data for a sequence.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::PosData;
+///
+/// let pos_data = PosData::new(42, 5);
+/// assert_eq!(pos_data.ext_code, 42);
+/// assert_eq!(pos_data.count, 5);
+/// ```
 #[derive(Debug)]
 pub struct PosData {
     /// 外部 taxonomy id
@@ -115,7 +206,21 @@ impl fmt::Display for PosData {
     }
 }
 
-/// 序列的命中分布
+/// Represents the distribution of positions in a sequence.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::SpaceDist;
+///
+/// let mut dist = SpaceDist::new((0, 10));
+/// dist.add(42, 5);
+/// dist.add(42, 6);
+/// dist.add(43, 8);
+/// dist.fill_tail_with_zeros();
+///
+/// println!("{}", dist); // Output: 0:4 42:2 0:1 43:1 0:2
+/// ```
 #[derive(Debug)]
 pub struct SpaceDist {
     pub value: Vec<PosData>,

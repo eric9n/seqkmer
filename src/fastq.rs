@@ -68,6 +68,27 @@ where
     }
 }
 
+/// FastqReader for reading FASTQ format files.
+///
+/// # Examples
+///
+/// ```
+/// use seqkmer::{FastqReader, Reader, OptionPair};
+/// use std::path::Path;
+///
+/// # fn main() -> std::io::Result<()> {
+/// let path = Path::new("tests/data/test.fastq");
+/// let mut reader = FastqReader::from_path(OptionPair::Single(path), 0, 0)?;
+///
+/// while let Some(sequences) = reader.next()? {
+///     for sequence in sequences {
+///         println!("Sequence ID: {}", sequence.header.id);
+///         println!("Sequence length: {}", sequence.body.single().unwrap().len());
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct FastqReader<R: Read + Send> {
     inner: OptionPair<QReader<R>>,
     file_index: usize,
@@ -80,11 +101,39 @@ impl<R> FastqReader<R>
 where
     R: Read + Send,
 {
+    /// Creates a new FastqReader with default capacity and batch size.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::{FastqReader, OptionPair};
+    /// use std::fs::File;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let file = File::open("tests/data/test.fastq")?;
+    /// let reader = FastqReader::new(OptionPair::Single(file), 0, 0);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(readers: OptionPair<R>, file_index: usize, quality_score: i32) -> Self {
         Self::with_capacity(readers, file_index, BUFSIZE, quality_score, 30)
     }
 
-    pub fn with_capacity<'a>(
+    /// Creates a new FastqReader with specified capacity and batch size.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::{FastqReader, OptionPair};
+    /// use std::fs::File;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let file = File::open("tests/data/test.fastq")?;
+    /// let reader = FastqReader::with_capacity(OptionPair::Single(file), 0, 4096, 0, 50);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_capacity(
         readers: OptionPair<R>,
         file_index: usize,
         capacity: usize,
@@ -127,6 +176,24 @@ where
         }
     }
 
+    /// Reads the next sequence from the FASTQ file.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::{FastqReader, OptionPair};
+    /// use std::fs::File;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let file = File::open("tests/data/test.fastq")?;
+    /// let mut reader = FastqReader::new(OptionPair::Single(file), 0, 0);
+    ///
+    /// if let Ok(Some(sequence)) = reader.read_next() {
+    ///     println!("Read a sequence");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn read_next(&mut self) -> Result<Option<Base<Vec<u8>>>> {
         match &mut self.inner {
             OptionPair::Single(reader) => {
@@ -165,6 +232,20 @@ where
 }
 
 impl FastqReader<Box<dyn Read + Send>> {
+    /// Creates a new FastqReader from file paths.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use seqkmer::{FastqReader, OptionPair};
+    /// use std::path::Path;
+    ///
+    /// # fn main() -> std::io::Result<()> {
+    /// let path = Path::new("tests/data/test.fastq");
+    /// let reader = FastqReader::from_path(OptionPair::Single(path), 0, 0)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline]
     pub fn from_path<P: AsRef<Path>>(
         paths: OptionPair<P>,

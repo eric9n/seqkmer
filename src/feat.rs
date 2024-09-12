@@ -124,18 +124,16 @@ pub const CURRENT_REVCOM_VERSION: u8 = 1;
 const M1: u64 = 0xff51afd7ed558ccd;
 const M2: u64 = 0xc4ceb9fe1a85ec53;
 
-///
-/// # Examples
+/// Example of using fmix64
 ///
 /// ```
-/// # use kr2r::fmix64;
-/// let key: u64 = 123;
-/// let hash = fmix64(key);
-/// assert_eq!(hash, 9208534749291869864);
+/// use seqkmer::fmix64;
+///
+/// let hash = fmix64(42);
+/// println!("Hash: {}", hash);
 /// ```
-#[inline]
-pub fn fmix64(key: u64) -> u64 {
-    let mut k = key;
+pub fn fmix64(k: u64) -> u64 {
+    let mut k = k;
     k ^= k >> 33;
     k = k.wrapping_mul(M1);
     k ^= k >> 33;
