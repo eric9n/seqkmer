@@ -1,6 +1,6 @@
 use crate::seq::{Base, SeqFormat};
 use crate::utils::OptionPair;
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Result, Seek};
@@ -23,7 +23,7 @@ use std::path::Path;
 pub fn dyn_reader<P: AsRef<Path>>(path: P) -> Result<Box<dyn Read + Send>> {
     let mut file = open_file(path)?;
     if is_gzipped(&mut file)? {
-        let decoder = GzDecoder::new(file);
+        let decoder = MultiGzDecoder::new(file);
         Ok(Box::new(decoder))
     } else {
         Ok(Box::new(file))

@@ -130,3 +130,58 @@ impl FastxReader<Box<dyn Reader + Send>> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_read_ont_fastq() -> std::io::Result<()> {
+        let path = Path::new("tests/data/example_ont_reads.fastq");
+        let mut reader = FastxReader::from_paths(OptionPair::Single(path), 0, 0)?;
+
+        let mut read_count = 0;
+        let mut total_bases = 0;
+
+        while let Some(sequences) = reader.next()? {
+            for sequence in sequences {
+                read_count += 1;
+                if let OptionPair::Single(seq) = sequence.body {
+                    total_bases += seq.len();
+                    
+                    // Verify the first read's content
+                    if read_count == 1 {
+                        assert_eq!(sequence.header.id, "89a96608-1899-49e1-b077-767a40d5ae27");
+                        
+                        // Check sequence length
+                        assert_eq!(seq.len(), 3928, "First sequence should be 3928 bases long");
+                        
+                        // Check sequence start and end
+                        let start = std::str::from_utf8(&seq[..10]).unwrap();
+                        let end = std::str::from_utf8(&seq[seq.len()-10..]).unwrap();
+                        
+                        assert_eq!(start, "ATGTTTTGTA");
+                        assert_eq!(end, "GTGGTGCCAT");
+                        
+                        // Verify sequence only contains valid DNA characters
+                        for &base in seq.iter() {
+                            assert!(matches!(base, b'A' | b'T' | b'C' | b'G' | b'N'));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Verify we read all 5 sequences from the file
+        assert_eq!(read_count, 5, "Should have read 5 sequences");
+        assert!(total_bases > 0, "Should have read some bases");
+        
+        // Verify total bases is reasonable
+        assert!(total_bases > 10000, "Total bases should be substantial");
+
+        Ok(())
+    }
+
+
+}
