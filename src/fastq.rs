@@ -176,17 +176,41 @@ where
 
 
     /// 辅助函数：从 header 字节中提取原始 ID 和基础 ID
-    fn get_ids_from_header(header_vec: &[u8]) -> (String, String) {
+    fn read_number_from_token(token: &str) -> Option<u8> {
+        if token.is_empty() {
+            return None;
+        }
+
+        if token.ends_with("/1") {
+            return Some(1);
+        }
+        if token.ends_with("/2") {
+            return Some(2);
+        }
+
+        let rest = token.as_bytes().get(1..);
+        match token.as_bytes().first() {
+            Some(b'1') if rest.map_or(true, |r| matches!(r.first(), Some(b':') | Some(b'/') | Some(b'#'))) => {
+                Some(1)
+            }
+            Some(b'2') if rest.map_or(true, |r| matches!(r.first(), Some(b':') | Some(b'/') | Some(b'#'))) => {
+                Some(2)
+            }
+            _ => None,
+        }
+    }
+
+    fn get_ids_from_header(header_vec: &[u8]) -> (String, String, Option<u8>) {
         // 确保它能正确处理换行符
         if header_vec.is_empty() || header_vec[0] != b'@' {
-            return (String::new(), String::new());
+            return (String::new(), String::new(), None);
         }
 
         let mut end = header_vec.len();
         if end > 0 && header_vec[end - 1] == b'\n' { end -= 1; }
         if end > 0 && header_vec[end - 1] == b'\r' { end -= 1; }
         
-        if end <= 1 { return (String::new(), String::new()); }
+        if end <= 1 { return (String::new(), String::new(), None); }
 
         let s = unsafe {
             std::str::from_utf8_unchecked(&header_vec[1..end])
@@ -199,8 +223,19 @@ where
         let raw_id_str = &s[..first_space_index];
         let raw_id = raw_id_str.to_string();
         let base_id = trim_pair_info(raw_id_str);
+
+        let mut read_number = Self::read_number_from_token(raw_id_str);
+        if read_number.is_none() && first_space_index < s.len() {
+            let rest = s[first_space_index..].trim_start();
+            for token in rest.split_whitespace() {
+                if let Some(num) = Self::read_number_from_token(token) {
+                    read_number = Some(num);
+                    break;
+                }
+            }
+        }
         
-        (raw_id, base_id)
+        (raw_id, base_id, read_number)
     }
 
 
@@ -366,7 +401,7 @@ where
                         // 首先检查缓冲区（仅在第一次转换时使用）
                         if let Some(buffered) = self.read_ahead_buffer.take() {
                              self.reads_index += 1;
-                             let base_id = Self::get_ids_from_header(&buffered.0).1; // (buffered.0 is header)
+                             let (_, base_id, _) = Self::get_ids_from_header(&buffered.0); // (buffered.0 is header)
                              let seq_header = SeqHeader {
                                 file_index: self.file_index,
                                 reads_index: self.reads_index,
@@ -403,7 +438,8 @@ where
                         let r1_seq_vec = reader.seq.to_owned();
                         
                         // 2. 解析 R1
-                        let (r1_raw_id, r1_base_id) = Self::get_ids_from_header(&r1_header_vec);
+                        let (r1_raw_id, r1_base_id, r1_read_num) =
+                            Self::get_ids_from_header(&r1_header_vec);
                         self.reads_index += 1;
                         let seq_header = SeqHeader {
                             file_index: self.file_index,
@@ -423,10 +459,13 @@ where
                         }
 
                         // 4. 解析 R2 并检查
-                        let (r2_raw_id, r2_base_id) = Self::get_ids_from_header(&reader.header);
-                        let is_pair = r1_base_id == r2_base_id &&
-                                      r1_raw_id.ends_with("/1") &&
-                                      r2_raw_id.ends_with("/2");
+                        let (r2_raw_id, r2_base_id, r2_read_num) =
+                            Self::get_ids_from_header(&reader.header);
+                        let is_pair = r1_base_id == r2_base_id
+                            && match (r1_read_num, r2_read_num) {
+                                (Some(1), Some(2)) => true,
+                                _ => r1_raw_id.ends_with("/1") && r2_raw_id.ends_with("/2"),
+                            };
 
                         if is_pair {
                             // --- 检测为 Interleaved ---
@@ -517,5 +556,117 @@ where
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Some(seqs).filter(|v| !v.is_empty()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_interleaved_with_space_delimited_read_numbers() -> std::io::Result<()> {
+        let data: &[u8] = b"@pairA 1:N:0:1\nAC\n+\n!!\n@pairA 2:N:0:1\nTG\n+\n!!\n";
+        let mut reader = FastqReader::new(OptionPair::Single(data), 0, 0);
+
+        let first_pair = reader.read_next()?;
+        let base = first_pair.expect("expected a paired read");
+        match base.body {
+            OptionPair::Pair(r1, r2) => {
+                assert_eq!(r1, b"AC");
+                assert_eq!(r2, b"TG");
+            }
+            other => panic!("expected paired reads, got {:?}", other),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn detects_interleaved_with_slash_suffixes() -> std::io::Result<()> {
+        let data: &[u8] = b"@pair1/1\nAC\n+\n!!\n@pair1/2\nTG\n+\n!!\n";
+        let mut reader = FastqReader::new(OptionPair::Single(data), 0, 0);
+
+        let base = reader
+            .read_next()?
+            .expect("expected a paired read in interleaved mode");
+        assert_eq!(base.header.id, "pair1");
+        match base.body {
+            OptionPair::Pair(r1, r2) => {
+                assert_eq!(r1, b"AC");
+                assert_eq!(r2, b"TG");
+            }
+            other => panic!("expected paired reads, got {:?}", other),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn single_end_fastq_remains_single() -> std::io::Result<()> {
+        let data: &[u8] =
+            b"@seq1\nAC\n+\n!!\n@seq2\nTT\n+\n!!\n";
+        let mut reader = FastqReader::new(OptionPair::Single(data), 0, 0);
+
+        let first = reader
+            .read_next()?
+            .expect("expected first single-end read");
+        assert_eq!(first.header.id, "seq1");
+        match first.body {
+            OptionPair::Single(seq) => assert_eq!(seq, b"AC"),
+            other => panic!("expected single body, got {:?}", other),
+        }
+
+        let second = reader
+            .read_next()?
+            .expect("expected second single-end read");
+        assert_eq!(second.header.id, "seq2");
+        match second.body {
+            OptionPair::Single(seq) => assert_eq!(seq, b"TT"),
+            other => panic!("expected single body, got {:?}", other),
+        }
+
+        assert!(reader.read_next()?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn interleaved_reader_errors_when_r2_missing() {
+        let data: &[u8] = b"@pair/1\nAA\n+\n!!\n@pair/2\nTT\n+\n!!\n@broken/1\nGG\n+\n!!\n";
+        let mut reader = FastqReader::new(OptionPair::Single(data), 0, 0);
+
+        // First pair should succeed.
+        assert!(reader.read_next().unwrap().is_some());
+
+        // Second pair is truncated: expect an UnexpectedEof error.
+        let err = reader.read_next().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn paired_files_mode_requires_balanced_lengths() {
+        let r1: &[u8] = b"@r1/1\nAC\n+\n!!\n";
+        let r2: &[u8] = b"";
+        let mut reader = FastqReader::new(OptionPair::Pair(r1, r2), 0, 0);
+
+        let err = reader.read_next().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn quality_threshold_masks_low_quality_bases() -> std::io::Result<()> {
+        let data: &[u8] = b"@seq\nACGT\n+\n!I!I\n";
+        let mut reader = FastqReader::new(OptionPair::Single(data), 0, 10);
+
+        let base = reader
+            .read_next()?
+            .expect("expected single read after quality filtering");
+
+        match base.body {
+            OptionPair::Single(seq) => assert_eq!(seq, b"xCxT"),
+            other => panic!("expected single body, got {:?}", other),
+        }
+
+        Ok(())
     }
 }

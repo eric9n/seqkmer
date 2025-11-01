@@ -145,19 +145,19 @@ pub fn detect_file_format<P: AsRef<Path>>(path: P) -> io::Result<SeqFormat> {
     ))
 }
 
-/// Trims trailing newlines, carriage returns, and '>' or '@' characters from a buffer.
+/// Trims trailing newline and carriage return characters from a buffer.
 ///
 /// # Examples
 ///
 /// ```
 /// use seqkmer::reader::trim_end;
 ///
-/// let mut buffer = b"ACGT\n>".to_vec();
+/// let mut buffer = b"ACGT\n\r".to_vec();
 /// trim_end(&mut buffer);
 /// assert_eq!(buffer, b"ACGT");
 /// ```
 pub fn trim_end(buffer: &mut Vec<u8>) {
-    while let Some(&b'\n' | &b'\r' | &b'>' | &b'@') = buffer.last() {
+    while let Some(&b'\n' | &b'\r') = buffer.last() {
         buffer.pop();
     }
 }

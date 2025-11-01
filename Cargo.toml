@@ -1,9 +1,9 @@
 [package]
 name = "seqkmer"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["eric9n@gmail.com"]
-description = "sequence kmer"
+description = "High-performance FASTA/FASTQ IO and minimizer-based k-mer analysis utilities for Rust bioinformatics pipelines."
 license = "MIT"
 repository = "https://github.com/eric9n/seqkmer"
 keywords = ["bioinformatics", "sequence", "kmer", "dna", "genomics"]

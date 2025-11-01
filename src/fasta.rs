@@ -1,16 +1,10 @@
-use crate::reader::{dyn_reader, Reader, BUFSIZE};
+use crate::reader::{dyn_reader, trim_end, Reader, BUFSIZE};
 use crate::seq::{Base, SeqFormat, SeqHeader};
 use crate::utils::OptionPair;
 use std::io::{BufRead, BufReader, Read, Result};
 use std::path::Path;
 
 const SEQ_LIMIT: u64 = u64::pow(2, 32);
-
-fn trim_line_end(buffer: &mut Vec<u8>) {
-    while matches!(buffer.last(), Some(b'\n' | b'\r')) {
-        buffer.pop();
-    }
-}
 
 fn first_non_whitespace(bytes: &[u8]) -> Option<usize> {
     bytes.iter().position(|b| !b.is_ascii_whitespace())
@@ -47,7 +41,7 @@ fn read_next_record<R: Read>(
             if bytes_read == 0 {
                 return Ok(None);
             }
-            trim_line_end(line_buf);
+            trim_end(line_buf);
             let Some(start) = first_non_whitespace(line_buf) else {
                 continue;
             };
@@ -69,7 +63,7 @@ fn read_next_record<R: Read>(
         if bytes_read == 0 {
             break;
         }
-        trim_line_end(line_buf);
+        trim_end(line_buf);
         let Some(start) = first_non_whitespace(line_buf) else {
             continue;
         };
@@ -521,6 +515,44 @@ mod tests {
             assert_eq!(a.header.id, b.header.id);
             assert_eq!(a.body.single().unwrap(), b.body.single().unwrap());
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn fasta_reader_handles_empty_sequences() -> Result<()> {
+        let data = b">empty\n>non_empty\nAC\r\n".to_vec();
+        let sequences = collect_all(|reader| FastaReader::new(reader, 0), Cursor::new(data))?;
+
+        assert_eq!(sequences.len(), 2);
+        assert_eq!(sequences[0].header.id, "empty");
+        assert!(sequences[0].body.single().unwrap().is_empty());
+        assert_eq!(sequences[1].header.id, "non_empty");
+        assert_eq!(
+            sequences[1].body.single().unwrap().as_slice(),
+            b"AC"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn buffer_fasta_reader_trims_whitespace_and_comments() -> Result<()> {
+        let data = b">seq1\n; comment before data\nA C G T \r\n\n\t; another comment\r\n>seq2\nTTTT\n"
+            .to_vec();
+        let sequences =
+            collect_all(|reader| BufferFastaReader::new(reader, 0), Cursor::new(data))?;
+
+        assert_eq!(sequences.len(), 2);
+        assert_eq!(sequences[0].header.id, "seq1");
+        assert_eq!(
+            sequences[0].body.single().unwrap().as_slice(),
+            b"ACGT"
+        );
+        assert_eq!(
+            sequences[1].body.single().unwrap().as_slice(),
+            b"TTTT"
+        );
 
         Ok(())
     }
